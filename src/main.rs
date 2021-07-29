@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 use std::env;
 use std::io::Write;
 
@@ -10,6 +11,14 @@ mod scanner;
 use chunk::*;
 use value::*;
 use scanner::Scanner;
+=======
+mod chunk;
+mod value;
+mod vm;
+
+use chunk::*;
+use value::*;
+>>>>>>> 0953e4fa7fc7f10f2b4f2fe5c6d092c00cc71745
 
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
@@ -19,6 +28,7 @@ pub enum Error {
     RUNTIME_ERROR,
 }
 
+<<<<<<< HEAD
 // function used to report errors to the user
 fn error(error: &str, message: &str, line: usize) {
     println!("{} at line {}: {}", error, line, message);
@@ -89,4 +99,40 @@ fn main() -> Result<(), Error> {
     } else {
         repl()
     }
+=======
+fn main() -> Result<(), Error> {
+    // declare virtual machine which will interpret the bytecode
+    let mut vm = vm::VM::default();
+    // declare chunk of bytecode, which contains executable instructions
+    let mut chunk = Chunk::new();
+
+    // write to code chunk
+    // add constant
+    let constant = Value::FLOAT(10.0);
+    let address = chunk.write_value(constant); // write value to the value array
+    chunk.write_chunk(OpCode::CONSTANT(address), 1);
+
+    let constant = Value::FLOAT(1.0);
+    let address = chunk.write_value(constant); // write value to the value array
+    chunk.write_chunk(OpCode::CONSTANT(address), 1);
+    // add
+    chunk.write_chunk(OpCode::ADD, 1);
+
+    let constant = Value::FLOAT(-1.0);
+    let address = chunk.write_value(constant); // write value to the value array
+    chunk.write_chunk(OpCode::CONSTANT(address), 2);
+
+    // multiply
+    chunk.write_chunk(OpCode::MUL, 2);
+    // negate
+    chunk.write_chunk(OpCode::NEGATE, 2);
+
+    chunk.write_chunk(OpCode::RETURN, 3);
+    // display chunk contents
+    chunk.dissassemble_chunk();
+    println!("");
+    
+    vm.set_chunk(chunk);
+    vm.interpret(false)
+>>>>>>> 0953e4fa7fc7f10f2b4f2fe5c6d092c00cc71745
 }
