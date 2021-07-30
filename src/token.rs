@@ -69,4 +69,6 @@ pub enum TokenType {
     IMPORT,
     AS,
     FROM,
+
+    EOF
 }

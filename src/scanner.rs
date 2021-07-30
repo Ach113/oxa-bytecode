@@ -6,15 +6,13 @@ pub struct Scanner {
     start: usize, // start index of token
     current: usize, // current index of token
     source: Vec<char>,
-    pub tokens: Vec<Token>,
     multi_line_comment: usize, // keeps track of multiline comments
 }
 
 impl Scanner {
     pub fn new(source: String) -> Scanner {
         let chars: Vec<char> = source.chars().collect();
-        let tokens: Vec<Token> = Vec::new();
-        Scanner {source: chars, tokens: tokens, line: 1, start: 0, current: 0, multi_line_comment: 0}
+        Scanner {source: chars, line: 1, start: 0, current: 0, multi_line_comment: 0}
     }
 
     pub fn cell(&self) -> char {
@@ -87,7 +85,7 @@ impl Scanner {
 
         // index the string
         let start = self.start;
-        let end = self.current;
+        let end = self.current + 1;
         let s: String = self.source[start..end].iter().collect();
         // check if numeric string can be parsed
         let n = s.trim_end().parse();
@@ -125,7 +123,7 @@ impl Scanner {
 
     // scans for an individual token at start location (at function call start == current)
     // throws SyntaxError if finds an unexpected character
-    pub fn scan_token(&mut self) -> Result<(), Error> {
+    pub fn scan_token(&mut self) -> Result<Token, Error> {
 
         // handles multi-line comments
         while self.multi_line_comment > 0 {
@@ -141,27 +139,27 @@ impl Scanner {
             self.current += 1;
         }
 
-        if self.is_eof() { return Ok(()); }
+        if self.is_eof() { return Ok(Token::new("".to_string(), TokenType::EOF, self.line)); }
         
         let c = self.cell();
         
         match c {
             // single char tokens
-            '(' => self.tokens.push(Token::new(c.to_string(), TokenType::LEFT_PAREN, self.line)),
-            ')' => self.tokens.push(Token::new(c.to_string(), TokenType::RIGHT_PAREN, self.line)),
-            '{' => self.tokens.push(Token::new(c.to_string(), TokenType::LEFT_BRACE, self.line)),
-            '}' => self.tokens.push(Token::new(c.to_string(), TokenType::RIGHT_BRACE, self.line)),
-            ',' => self.tokens.push(Token::new(c.to_string(), TokenType::COMMA, self.line)),
-            '.' => self.tokens.push(Token::new(c.to_string(), TokenType::DOT, self.line)),
-            '-' => self.tokens.push(Token::new(c.to_string(), TokenType::MINUS, self.line)),
-            '+' => self.tokens.push(Token::new(c.to_string(), TokenType::PLUS, self.line)),
-            ';' => self.tokens.push(Token::new(c.to_string(), TokenType::SEMICOLON, self.line)),
-            '*' => self.tokens.push(Token::new(c.to_string(), TokenType::STAR, self.line)),
-            '%' => self.tokens.push(Token::new(c.to_string(), TokenType::PERCENT, self.line)),
-            '[' => self.tokens.push(Token::new(c.to_string(), TokenType::BRA, self.line)),
-            ']' => self.tokens.push(Token::new(c.to_string(), TokenType::KET, self.line)),
+            '(' => return Ok(Token::new(c.to_string(), TokenType::LEFT_PAREN, self.line)),
+            ')' => return Ok(Token::new(c.to_string(), TokenType::RIGHT_PAREN, self.line)),
+            '{' => return Ok(Token::new(c.to_string(), TokenType::LEFT_BRACE, self.line)),
+            '}' => return Ok(Token::new(c.to_string(), TokenType::RIGHT_BRACE, self.line)),
+            ',' => return Ok(Token::new(c.to_string(), TokenType::COMMA, self.line)),
+            '.' => return Ok(Token::new(c.to_string(), TokenType::DOT, self.line)),
+            '-' => return Ok(Token::new(c.to_string(), TokenType::MINUS, self.line)),
+            '+' => return Ok(Token::new(c.to_string(), TokenType::PLUS, self.line)),
+            ';' => return Ok(Token::new(c.to_string(), TokenType::SEMICOLON, self.line)),
+            '*' => return Ok(Token::new(c.to_string(), TokenType::STAR, self.line)),
+            '%' => return Ok(Token::new(c.to_string(), TokenType::PERCENT, self.line)),
+            '[' => return Ok(Token::new(c.to_string(), TokenType::BRA, self.line)),
+            ']' => return Ok(Token::new(c.to_string(), TokenType::KET, self.line)),
             // two char tokens
-            '!' => self.tokens.push(
+            '!' => return Ok(
                 if self.next('=') {
                     self.current += 1;
                     Token::new("!=".to_string(), TokenType::BANG_EQUAL, self.line)
@@ -169,7 +167,7 @@ impl Scanner {
                     Token::new(c.to_string(), TokenType::BANG, self.line)
                 }
             ),
-            '<' => self.tokens.push(
+            '<' => return Ok(
                 if self.next('=') {
                     self.current += 1;
                     Token::new("<=".to_string(), TokenType::LESS_EQUAL, self.line)
@@ -177,7 +175,7 @@ impl Scanner {
                     Token::new(c.to_string(), TokenType::LESS, self.line)
                 }
             ),
-            '>' => self.tokens.push(
+            '>' => return Ok(
                 if self.next('=') {
                     self.current += 1;
                     Token::new(">=".to_string(), TokenType::GREATER_EQUAL, self.line)
@@ -185,7 +183,7 @@ impl Scanner {
                     Token::new(c.to_string(), TokenType::GREATER, self.line)
                 }
             ),
-            '=' => self.tokens.push(
+            '=' => return Ok(
                 if self.next('=') {
                     self.current += 1;
                     Token::new("==".to_string(), TokenType::EQUAL_EQUAL, self.line)
@@ -200,47 +198,53 @@ impl Scanner {
                         self.current += 1;
                     }
                     self.line += 1;
+                    return self.advance();
                 } else if self.next('*') {
                     self.multi_line_comment += 1;
                     self.current += 1;
+                    return self.advance();
                 } else {
-                    self.tokens.push(Token::new(c.to_string(), TokenType::SLASH, self.line));
+                    return Ok(Token::new(c.to_string(), TokenType::SLASH, self.line));
                 }
             },
             // strings
             '"' => {
-                if let Ok(s) = self.get_string() {
-                    self.tokens.push(Token::new(s.clone(), TokenType::STRING, self.line));
+                match self.get_string() {
+                    Ok(s) => return Ok(Token::new(s.clone(), TokenType::STRING, self.line)),
+                    _ => return Err(Error::COMPILE_ERROR)
                 }
             },
-            '\n' => self.line += 1,
-            '\r' | ' ' | '\t' => {},
+            '\n' => {
+                self.line += 1;
+                self.current += 1;
+                return self.advance();
+            },
+            '\r' | ' ' | '\t' => {
+                self.current += 1;
+                return self.advance();
+            },
             // default 
             _ => {
                 if c.is_digit(10) {
-                    if let Ok(n) = self.get_number() {
-                        self.tokens.push(Token::new(n.to_string(), TokenType::NUMBER, self.line));
+                    match self.get_number() {
+                        Ok(n) => return Ok(Token::new(n.to_string(), TokenType::NUMBER, self.line)),
+                        _ => return Err(Error::COMPILE_ERROR)
                     }
                 } else if c.is_alphabetic() {
-                    let t = self.get_identifier();
-                    self.tokens.push(t);
+                    return Ok(self.get_identifier());
                 } else {
                     crate::error("SyntaxError", &format!("Unexpected character {}", c), self.line);
                     return Err(Error::COMPILE_ERROR);
                 }
             },
         }
-        self.current += 1; // advance to next char in source code
-        Ok(())
     }
 
-    // scans for tokens in source file
-    pub fn scan_tokens(&mut self) -> Result<(), Error>{
-        while !self.is_eof() { 
-            self.start = self.current;
-            self.scan_token()?;
-        }
-        Ok(())
+    pub fn advance(&mut self) -> Result<Token, Error> {
+        self.start = self.current;
+        let token = self.scan_token();
+        self.current += 1;
+        return token;
     }
 }
 
