@@ -5,51 +5,50 @@ mod chunk;
 mod value;
 mod vm;
 mod token;
+mod compiler;
 mod scanner;
 
-use chunk::*;
-use value::*;
-use scanner::Scanner;
+use chunk::Chunk;
+use vm::VM;
+use compiler::Compiler;
 
 #[allow(non_camel_case_types)]
 #[derive(Debug)]
 pub enum Error {
-    STRING(String),
-    COMPILE_ERROR,
-    RUNTIME_ERROR,
+    COMPILE_ERROR(String, usize),
+    RUNTIME_ERROR(String, usize),
+    DIVIDE_BY_ZERO,
+    FILE_NOT_FOUND,
+    IO_ERROR,
+    SIGNAL
 }
 
-// function used to report errors to the user
-fn error(error: &str, message: &str, line: usize) {
-    println!("{} at line {}: {}", error, line, message);
-}
-
-fn run(code: String) -> Result<(), Error> {
-    let mut scanner = Scanner::new(code);
-    scanner.scan_tokens()?;
-
-    let mut line = 0;
-    for token in scanner.tokens {
-        if token.line != line {
-            print!("{} ", token.line);
-            line = token.line;
-        } else {
-            print!("| ");
-        }
-        println!("{:?} '{}'", token.t, token.lexeme); 
+fn interpret(code: String) -> Result<(), Error> {
+    // declare virtual machine which will interpret the bytecode
+    let mut vm = VM::default();
+    // instantiate the chunk
+    let mut chunk = Chunk::new();
+    // instantiate the compiler
+    let mut compiler = Compiler::new(code);
+    // compile the source code into bytecode
+    if let Err(e) = compiler.compile(&mut chunk) {
+        return Err(e);
     }
-    Ok(())
+    // set VM with chunk of bytecode
+    vm.set_chunk(chunk);
+    // run the VM
+    vm.execute(true)
 }
 
 // reads text from source file and runs it
 fn runfile(filename: &str) -> Result<(), Error> {
     match std::fs::read_to_string(filename) {
         Ok(code) => {
-            run(code)
+            interpret(code)
         },
         Err(_) => {
             println!("FileNotFound: file `{}` could not be found", filename);
-            Err(Error::COMPILE_ERROR)
+            Err(Error::FILE_NOT_FOUND)
         }
     }
     
@@ -61,23 +60,20 @@ fn repl() -> Result<(), Error> {
         // necessary due to line-buffering of stdout
         match std::io::stdout().flush() {
             Ok(_) => {},
-            Err(_) => return Err(Error::COMPILE_ERROR)
+            Err(_) => return Err(Error::IO_ERROR)
         };
         let mut instruction = String::new();
         match std::io::stdin().read_line(&mut instruction) {
             Ok(_) => {},
-            Err(_) => return Err(Error::COMPILE_ERROR)
+            Err(_) => return Err(Error::IO_ERROR)
         };
         if !instruction.trim().is_empty() {
-            run(instruction)?;
+            interpret(instruction)?;
         }
     }
 }
 
 fn main() -> Result<(), Error> {
-    // declare virtual machine which will interpret the bytecode
-    let mut vm = vm::VM::default();
-    
     let argv: Vec<_> = env::args().collect();
     let argc = argv.len();
 

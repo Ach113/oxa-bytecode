@@ -97,7 +97,7 @@ impl Chunk {
         }
     }
 
-    fn get_line(&self, mut offset: usize) -> usize {
+    pub fn get_line(&self, mut offset: usize) -> usize {
         for (i, line) in self.lines.iter().enumerate() {
             for _ in 0..(*line) {
                 if offset == 0 {
@@ -114,11 +114,11 @@ impl Chunk {
         self.values.len() - 1
     }
 
-    // displays contents of the chunk
+    /* displays contents of the chunk
     pub fn dissassemble_chunk(&self) {
         let mut offset = 0;
         while offset < self.code.len() {
             offset = self.code[offset].dissassemble_instruction(self, offset);
         }
-    }
+    } */
 }

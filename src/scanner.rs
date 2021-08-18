@@ -90,8 +90,7 @@ impl Scanner {
         // check if numeric string can be parsed
         let n = s.trim_end().parse();
         if n.is_err() || s.trim_end().ends_with('.') {
-            crate::error("SyntaxError", &format!("Invalid numeral {}", s), self.line);
-            return Err(Error::COMPILE_ERROR);
+            return Err(Error::COMPILE_ERROR(format!("SyntaxError: Invalid float {}", s), self.line));
         } else {
             Ok(n.unwrap())
         }
@@ -108,8 +107,7 @@ impl Scanner {
 
         // if eof is reached while string has still not been terminated
         if self.is_eof() {
-            crate::error("SyntaxError", "EOL while scanning string literal", self.line);
-            return Err(Error::COMPILE_ERROR);
+            return Err(Error::COMPILE_ERROR("EOL while scanning string literal".into(), self.line));
         } 
 
         self.current += 1; // advance further to `consume` end of string literal ('"')
@@ -139,7 +137,7 @@ impl Scanner {
             self.current += 1;
         }
 
-        if self.is_eof() { return Ok(Token::new("".to_string(), TokenType::EOF, self.line)); }
+        if self.is_eof() { return Ok(Token::new("EOF".to_string(), TokenType::EOF, self.line)); }
         
         let c = self.cell();
         
@@ -211,7 +209,7 @@ impl Scanner {
             '"' => {
                 match self.get_string() {
                     Ok(s) => return Ok(Token::new(s.clone(), TokenType::STRING, self.line)),
-                    _ => return Err(Error::COMPILE_ERROR)
+                    Err(e) => return Err(e)
                 }
             },
             '\n' => {
@@ -228,13 +226,12 @@ impl Scanner {
                 if c.is_digit(10) {
                     match self.get_number() {
                         Ok(n) => return Ok(Token::new(n.to_string(), TokenType::NUMBER, self.line)),
-                        _ => return Err(Error::COMPILE_ERROR)
+                        Err(e) => return Err(e)
                     }
                 } else if c.is_alphabetic() {
                     return Ok(self.get_identifier());
                 } else {
-                    crate::error("SyntaxError", &format!("Unexpected character {}", c), self.line);
-                    return Err(Error::COMPILE_ERROR);
+                    return Err(Error::COMPILE_ERROR(format!("Unexpected character {}", c), self.line));
                 }
             },
         }
