@@ -4,10 +4,9 @@ use crate::value::Value;
 pub enum OpCode {
     RETURN,
     CONSTANT(usize),
-    //literal
-    TRUE,
-    FALSE,
-    NIL,
+    //TRUE,
+    //FALSE,
+    //NIL,
     // unary ops
     NEGATE,
     BANG,
@@ -19,6 +18,9 @@ pub enum OpCode {
     REM,
     OR,
     AND,
+    EQUAL,
+    GREATER,
+    LESS,
 }
 
 impl OpCode {

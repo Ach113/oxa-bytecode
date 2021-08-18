@@ -3,10 +3,11 @@ use std::fmt;
 
 use crate::Error;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum Value {
     FLOAT(f64),
     BOOL(bool),
+    STRING(String),
     NIL
 }
 
@@ -29,6 +30,7 @@ impl Add for Value {
     fn add(self, right: Value) -> Result<Value, Error> {
         match (self, right) {
             (Value::FLOAT(a), Value::FLOAT(b)) => Ok(Value::FLOAT(a + b)),
+            (Value::STRING(a), Value::STRING(b)) => Ok(Value::STRING(format!("{}{}", a, b))),
             _ => Err(Error::SIGNAL)
         }
     }
@@ -75,6 +77,8 @@ impl Mul for Value {
     fn mul(self, right: Value) -> Result<Value, Error> {
         match (self, right) {
             (Value::FLOAT(a), Value::FLOAT(b)) => Ok(Value::FLOAT(a * b)),
+            (Value::FLOAT(a), Value::STRING(b)) => Ok(Value::STRING(b.repeat(a as usize))),
+            (Value::STRING(b), Value::FLOAT(a)) => Ok(Value::STRING(b.repeat(a as usize))),
             _ => Err(Error::SIGNAL)
         }
     }
@@ -121,6 +125,7 @@ impl fmt::Display for Value {
         match self {
             Value::FLOAT(x) => write!(f, "{}", x),
             Value::BOOL(x) => write!(f, "{}", x),
+            Value::STRING(x) => write!(f, "{}", x),
             Value::NIL => write!(f, ""),
         }
     }

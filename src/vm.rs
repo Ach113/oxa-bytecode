@@ -45,15 +45,6 @@ impl VM {
                     println!("{}", self.stack.pop().unwrap());
                     return Ok(());
                 },
-                OpCode::TRUE => {
-                    self.stack.push(Value::BOOL(true));
-                },
-                OpCode::FALSE => {
-                    self.stack.push(Value::BOOL(false));
-                },
-                OpCode::NIL => {
-                    self.stack.push(Value::NIL);
-                },
                 OpCode::CONSTANT(addr) => {
                     let value = self.chunk.read_value(*addr);
                     self.stack.push(value);
@@ -157,7 +148,28 @@ impl VM {
                     }
                     let value = binary_op!(self, %)?;
                     self.stack.push(value);
-                }
+                },
+                OpCode::EQUAL => {
+                    if self.stack.len() < 2 {
+                        return Err(Error::RUNTIME_ERROR("IndexError: Stack index out of range".into(), self.chunk.get_line(self.ip)));
+                    }
+                    let value = binary_op!(self, ==);
+                    self.stack.push(Value::BOOL(value));
+                },
+                OpCode::GREATER => {
+                    if self.stack.len() < 2 {
+                        return Err(Error::RUNTIME_ERROR("IndexError: Stack index out of range".into(), self.chunk.get_line(self.ip)));
+                    }
+                    let value = binary_op!(self, >);
+                    self.stack.push(Value::BOOL(value));
+                },
+                OpCode::LESS => {
+                    if self.stack.len() < 2 {
+                        return Err(Error::RUNTIME_ERROR("IndexError: Stack index out of range".into(), self.chunk.get_line(self.ip)));
+                    }
+                    let value = binary_op!(self, <);
+                    self.stack.push(Value::BOOL(value));
+                },
             };
         }
     }

@@ -38,6 +38,10 @@ impl Precendence {
     }
 }
 
+const BIN: [TokenType; 14] = [TokenType::PLUS, TokenType::MINUS, TokenType::SLASH, TokenType::PERCENT, TokenType::STAR, TokenType::STAR, 
+                              TokenType::OR, TokenType::AND, TokenType::EQUAL_EQUAL, TokenType::BANG_EQUAL, TokenType::LESS, TokenType::GREATER,
+                              TokenType::GREATER_EQUAL, TokenType::LESS_EQUAL];
+
 pub struct Compiler {
     scanner: Scanner,
     current: Token,
@@ -116,6 +120,12 @@ impl Compiler {
             TokenType::SLASH => Precendence::FACTOR,
             TokenType::STAR => Precendence::FACTOR,
             TokenType::PERCENT => Precendence::FACTOR,
+            TokenType::EQUAL_EQUAL => Precendence::EQUALITY,
+            TokenType::BANG_EQUAL => Precendence::EQUALITY,
+            TokenType::LESS => Precendence::COMPARISON,
+            TokenType::GREATER => Precendence::COMPARISON,
+            TokenType::LESS_EQUAL => Precendence::COMPARISON,
+            TokenType::GREATER_EQUAL => Precendence::COMPARISON,
             TokenType::NUMBER => Precendence::NONE,
             _ => Precendence::NONE
         }
@@ -125,15 +135,10 @@ impl Compiler {
         self.advance()?;
         // prefix
         match self.previous.t {
-            TokenType::LEFT_PAREN => {
-                self.grouping(chunk)?;
-            },
-            TokenType::MINUS | TokenType::BANG => {
-                self.unary(chunk)?;
-            },
-            TokenType::NUMBER => {
-                self.number(chunk)?;
-            },
+            TokenType::LEFT_PAREN => self.grouping(chunk)?,
+            TokenType::MINUS | TokenType::BANG => self.unary(chunk)?,
+            TokenType::NUMBER => self.number(chunk)?,
+            TokenType::STRING => self.string(chunk)?,
             TokenType::TRUE | TokenType::FALSE | TokenType::NIL => self.literal(chunk)?,
             _ => {
                 return Err(Error::RUNTIME_ERROR(format!("Expected expression got `{}`", self.previous), self.previous.line));
@@ -142,9 +147,10 @@ impl Compiler {
         // infix
         while prec < self.get_precendence() {
             self.advance()?;
-            match self.previous.t {
-                TokenType::AND | TokenType::OR | TokenType::MINUS | TokenType::PLUS | TokenType::SLASH | TokenType::STAR | TokenType::PERCENT => self.binary(chunk)?,
-                _ => return Err(Error::RUNTIME_ERROR(format!("Invalid infix operator `{}`", self.previous), self.previous.line))
+            if BIN.iter().any(|x| *x == self.previous.t) {
+                self.binary(chunk)?;
+            } else {
+                return Err(Error::RUNTIME_ERROR(format!("Invalid infix operator `{}`", self.previous), self.previous.line));
             }
         }
         Ok(())
@@ -154,7 +160,6 @@ impl Compiler {
         self.parse_precendence(chunk, Precendence::ASSIGNMENT)
     }
 
-    // prefix expression
     fn number(&mut self, chunk: &mut Chunk) -> Result<(), Error> {
         match self.previous.lexeme.parse() {
             Ok(x) => {
@@ -167,16 +172,21 @@ impl Compiler {
         }
     }
 
+    fn string(&mut self, chunk: &mut Chunk) -> Result<(), Error> {
+        self.write_constant(chunk, Value::STRING(self.previous.lexeme.clone()));
+        Ok(())
+    }
+
     fn literal(&mut self, chunk: &mut Chunk) -> Result<(), Error> {
         match self.previous.t {
             TokenType::TRUE => {
-                self.write_byte(chunk, OpCode::TRUE);
+                self.write_constant(chunk, Value::BOOL(true));
             },
             TokenType::FALSE => {
-                self.write_byte(chunk, OpCode::FALSE);
+                self.write_constant(chunk, Value::BOOL(false));
             },
             TokenType::NIL => {
-                self.write_byte(chunk, OpCode::NIL);
+                self.write_constant(chunk, Value::NIL);
             },
             _ => {
                 return Err(Error::COMPILE_ERROR(format!("Invalid literal of type `{}`", self.previous), self.previous.line));
@@ -212,26 +222,27 @@ impl Compiler {
         self.parse_precendence(chunk, prec.next())?;
 
         match token_type {
-            TokenType::PLUS => {
-                self.write_byte(chunk, OpCode::ADD);
+            TokenType::PLUS => self.write_byte(chunk, OpCode::ADD),
+            TokenType::MINUS => self.write_byte(chunk, OpCode::SUB),
+            TokenType::STAR => self.write_byte(chunk, OpCode::MUL),
+            TokenType::SLASH => self.write_byte(chunk, OpCode::DIV),
+            TokenType::PERCENT => self.write_byte(chunk, OpCode::REM),
+            TokenType::OR => self.write_byte(chunk, OpCode::OR),
+            TokenType::AND => self.write_byte(chunk, OpCode::AND),
+            TokenType::EQUAL_EQUAL => self.write_byte(chunk, OpCode::EQUAL),
+            TokenType::LESS => self.write_byte(chunk, OpCode::LESS),
+            TokenType::GREATER => self.write_byte(chunk, OpCode::GREATER),
+            TokenType::BANG_EQUAL => {
+                self.write_byte(chunk, OpCode::EQUAL);
+                self.write_byte(chunk, OpCode::BANG);
             },
-            TokenType::MINUS => {
-                self.write_byte(chunk, OpCode::SUB);
+            TokenType::LESS_EQUAL => {
+                self.write_byte(chunk, OpCode::LESS);
+                self.write_byte(chunk, OpCode::BANG);
             },
-            TokenType::STAR => {
-                self.write_byte(chunk, OpCode::MUL);
-            },
-            TokenType::SLASH => {
-                self.write_byte(chunk, OpCode::DIV);
-            },
-            TokenType::PERCENT => {
-                self.write_byte(chunk, OpCode::REM);
-            },
-            TokenType::OR => {
-                self.write_byte(chunk, OpCode::OR);
-            },
-            TokenType::AND => {
-                self.write_byte(chunk, OpCode::AND);
+            TokenType::GREATER_EQUAL => {
+                self.write_byte(chunk, OpCode::GREATER);
+                self.write_byte(chunk, OpCode::BANG);
             },
             _ => {
                 // unreachable
