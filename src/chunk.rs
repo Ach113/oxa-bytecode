@@ -4,14 +4,23 @@ use crate::value::Value;
 pub enum OpCode {
     RETURN,
     CONSTANT(usize),
+    //TRUE,
+    //FALSE,
+    //NIL,
     // unary ops
     NEGATE,
+    BANG,
     // binary ops
     ADD,
     SUB,
     MUL,
     DIV,
     REM,
+    OR,
+    AND,
+    EQUAL,
+    GREATER,
+    LESS,
 }
 
 impl OpCode {
@@ -27,32 +36,12 @@ impl OpCode {
                 println!("{:?}", self);
                 return offset + 1;
             },
-            OpCode::ADD => {
-                println!("{:?}", self);
-                return offset + 1;
-            },
-            OpCode::SUB => {
-                println!("{:?}", self);
-                return offset + 1;
-            },
-            OpCode::MUL => {
-                println!("{:?}", self);
-                return offset + 1;
-            },
-            OpCode::DIV => {
-                println!("{:?}", self);
-                return offset + 1;
-            },
-            OpCode::REM => {
-                println!("{:?}", self);
-                return offset + 1;
-            },
-            OpCode::NEGATE => {
-                println!("{:?}", self);
-                return offset + 1;
-            },
             OpCode::CONSTANT(addr) => {
                 println!("{:?} at {:0>4?}", chunk.values[*addr], addr);
+                return offset + 1;
+            },
+            _ => {
+                println!("{:?}", self);
                 return offset + 1;
             },
         }
@@ -97,7 +86,7 @@ impl Chunk {
         }
     }
 
-    fn get_line(&self, mut offset: usize) -> usize {
+    pub fn get_line(&self, mut offset: usize) -> usize {
         for (i, line) in self.lines.iter().enumerate() {
             for _ in 0..(*line) {
                 if offset == 0 {
@@ -114,11 +103,11 @@ impl Chunk {
         self.values.len() - 1
     }
 
-    // displays contents of the chunk
+    /* displays contents of the chunk
     pub fn dissassemble_chunk(&self) {
         let mut offset = 0;
         while offset < self.code.len() {
             offset = self.code[offset].dissassemble_instruction(self, offset);
         }
-    }
+    } */
 }
