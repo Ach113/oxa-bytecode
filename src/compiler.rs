@@ -14,7 +14,7 @@ enum Precendence {
     EQUALITY,    // == !=
     COMPARISON,  // < > <= >=
     TERM,        // + -
-    FACTOR,      // * /
+    FACTOR,      // * / %
     UNARY,       // ! -
     CALL,        // . ()
     PRIMARY
@@ -100,7 +100,6 @@ impl Compiler {
 
     pub fn compile(&mut self, chunk: &mut Chunk) -> Result<(), Error> {
         self.advance()?; // consume default
-        //self.advance()?; // consume default
         self.expression(chunk)?;
         self.consume(TokenType::EOF, "Expect end of expression")?;
         self.write_byte(chunk, OpCode::RETURN);
@@ -110,10 +109,13 @@ impl Compiler {
     fn get_precendence(&mut self) -> Precendence {
         match self.current.t {
             TokenType::LEFT_PAREN => Precendence::NONE,
+            TokenType::AND => Precendence::AND,
+            TokenType::OR => Precendence::OR,
             TokenType::MINUS => Precendence::TERM,
             TokenType::PLUS => Precendence::TERM,
             TokenType::SLASH => Precendence::FACTOR,
             TokenType::STAR => Precendence::FACTOR,
+            TokenType::PERCENT => Precendence::FACTOR,
             TokenType::NUMBER => Precendence::NONE,
             _ => Precendence::NONE
         }
@@ -126,12 +128,13 @@ impl Compiler {
             TokenType::LEFT_PAREN => {
                 self.grouping(chunk)?;
             },
-            TokenType::MINUS => {
+            TokenType::MINUS | TokenType::BANG => {
                 self.unary(chunk)?;
             },
             TokenType::NUMBER => {
                 self.number(chunk)?;
             },
+            TokenType::TRUE | TokenType::FALSE | TokenType::NIL => self.literal(chunk)?,
             _ => {
                 return Err(Error::RUNTIME_ERROR(format!("Expected expression got `{}`", self.previous), self.previous.line));
             }
@@ -140,7 +143,7 @@ impl Compiler {
         while prec < self.get_precendence() {
             self.advance()?;
             match self.previous.t {
-                TokenType::MINUS | TokenType::PLUS | TokenType::SLASH | TokenType::STAR => self.binary(chunk)?,
+                TokenType::AND | TokenType::OR | TokenType::MINUS | TokenType::PLUS | TokenType::SLASH | TokenType::STAR | TokenType::PERCENT => self.binary(chunk)?,
                 _ => return Err(Error::RUNTIME_ERROR(format!("Invalid infix operator `{}`", self.previous), self.previous.line))
             }
         }
@@ -164,6 +167,24 @@ impl Compiler {
         }
     }
 
+    fn literal(&mut self, chunk: &mut Chunk) -> Result<(), Error> {
+        match self.previous.t {
+            TokenType::TRUE => {
+                self.write_byte(chunk, OpCode::TRUE);
+            },
+            TokenType::FALSE => {
+                self.write_byte(chunk, OpCode::FALSE);
+            },
+            TokenType::NIL => {
+                self.write_byte(chunk, OpCode::NIL);
+            },
+            _ => {
+                return Err(Error::COMPILE_ERROR(format!("Invalid literal of type `{}`", self.previous), self.previous.line));
+            }
+        }
+        Ok(())
+    }
+
     fn grouping(&mut self, chunk: &mut Chunk) -> Result<(), Error> {
         self.expression(chunk)?;
         self.consume(TokenType::RIGHT_PAREN, "Expect `)` after expression")
@@ -177,6 +198,7 @@ impl Compiler {
 
         match token_type {
             TokenType::MINUS => self.write_byte(chunk, OpCode::NEGATE),
+            TokenType::BANG => self.write_byte(chunk, OpCode::BANG),
             _ => {}
         }
         Ok(())
@@ -204,6 +226,12 @@ impl Compiler {
             },
             TokenType::PERCENT => {
                 self.write_byte(chunk, OpCode::REM);
+            },
+            TokenType::OR => {
+                self.write_byte(chunk, OpCode::OR);
+            },
+            TokenType::AND => {
+                self.write_byte(chunk, OpCode::AND);
             },
             _ => {
                 // unreachable

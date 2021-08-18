@@ -40,10 +40,19 @@ impl VM {
             match instruction {
                 OpCode::RETURN => {
                     if debug {
-                        println!("------------------------------\n");
+                        println!("------------------------------");
                     }
                     println!("{}", self.stack.pop().unwrap());
                     return Ok(());
+                },
+                OpCode::TRUE => {
+                    self.stack.push(Value::BOOL(true));
+                },
+                OpCode::FALSE => {
+                    self.stack.push(Value::BOOL(false));
+                },
+                OpCode::NIL => {
+                    self.stack.push(Value::NIL);
                 },
                 OpCode::CONSTANT(addr) => {
                     let value = self.chunk.read_value(*addr);
@@ -61,6 +70,17 @@ impl VM {
                         return Err(Error::RUNTIME_ERROR("TypeError: Unsporrted operand types for `-`".into(), self.chunk.get_line(self.ip)));
                     }   
                 },
+                OpCode::BANG => {
+                    let n = self.stack.len();
+                    if n < 1 {
+                        return Err(Error::RUNTIME_ERROR("IndexError: Stack index out of range".into(), self.chunk.get_line(self.ip)));
+                    }
+                    let value = self.stack[n - 1].clone();
+                    match value {
+                        Value::BOOL(x) => self.stack[n - 1] = Value::BOOL(!x),
+                        _ => return Err(Error::RUNTIME_ERROR("TypeError: Unsporrted operand types for `!`".into(), self.chunk.get_line(self.ip)))
+                    }  
+                },
                 OpCode::ADD => {
                     if self.stack.len() < 2 {
                         return Err(Error::RUNTIME_ERROR("IndexError: Stack index out of range".into(), self.chunk.get_line(self.ip)));
@@ -70,6 +90,28 @@ impl VM {
                         self.stack.push(x.clone());
                     } else {
                         return Err(Error::RUNTIME_ERROR("TypeError: Unsporrted operand types for `+`".into(), self.chunk.get_line(self.ip)));
+                    }
+                },
+                OpCode::OR => {
+                    if self.stack.len() < 2 {
+                        return Err(Error::RUNTIME_ERROR("IndexError: Stack index out of range".into(), self.chunk.get_line(self.ip)));
+                    }
+                    let value = binary_op!(self, |);
+                    if let Ok(x) = value {
+                        self.stack.push(x.clone());
+                    } else {
+                        return Err(Error::RUNTIME_ERROR("TypeError: Unsporrted operand types for `or`".into(), self.chunk.get_line(self.ip)));
+                    }
+                },
+                OpCode::AND => {
+                    if self.stack.len() < 2 {
+                        return Err(Error::RUNTIME_ERROR("IndexError: Stack index out of range".into(), self.chunk.get_line(self.ip)));
+                    }
+                    let value = binary_op!(self, &);
+                    if let Ok(x) = value {
+                        self.stack.push(x.clone());
+                    } else {
+                        return Err(Error::RUNTIME_ERROR("TypeError: Unsporrted operand types for `and`".into(), self.chunk.get_line(self.ip)));
                     }
                 },
                 OpCode::SUB => {

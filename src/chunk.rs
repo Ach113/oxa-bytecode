@@ -4,14 +4,21 @@ use crate::value::Value;
 pub enum OpCode {
     RETURN,
     CONSTANT(usize),
+    //literal
+    TRUE,
+    FALSE,
+    NIL,
     // unary ops
     NEGATE,
+    BANG,
     // binary ops
     ADD,
     SUB,
     MUL,
     DIV,
     REM,
+    OR,
+    AND,
 }
 
 impl OpCode {
@@ -27,32 +34,12 @@ impl OpCode {
                 println!("{:?}", self);
                 return offset + 1;
             },
-            OpCode::ADD => {
-                println!("{:?}", self);
-                return offset + 1;
-            },
-            OpCode::SUB => {
-                println!("{:?}", self);
-                return offset + 1;
-            },
-            OpCode::MUL => {
-                println!("{:?}", self);
-                return offset + 1;
-            },
-            OpCode::DIV => {
-                println!("{:?}", self);
-                return offset + 1;
-            },
-            OpCode::REM => {
-                println!("{:?}", self);
-                return offset + 1;
-            },
-            OpCode::NEGATE => {
-                println!("{:?}", self);
-                return offset + 1;
-            },
             OpCode::CONSTANT(addr) => {
                 println!("{:?} at {:0>4?}", chunk.values[*addr], addr);
+                return offset + 1;
+            },
+            _ => {
+                println!("{:?}", self);
                 return offset + 1;
             },
         }
