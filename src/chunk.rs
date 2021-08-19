@@ -102,7 +102,13 @@ impl Chunk {
         return 0;
     }
 
+    // pushes value to the value vector, return its index. if value is already in vector, return index
     pub fn write_value(&mut self, value: Value) -> usize {
+        if let Some(x) = self.values.last() {
+            if *x == value {
+                return self.values.len() - 1;
+            }
+        }
         self.values.push(value);
         self.values.len() - 1
     }
