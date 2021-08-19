@@ -5,7 +5,7 @@ use crate::token::{Token, TokenType};
 use crate::value::Value;
 
 #[allow(non_camel_case_types)]
-#[derive(PartialEq, PartialOrd)]
+#[derive(PartialEq, PartialOrd, Debug)]
 enum Precendence {
     NONE,
     ASSIGNMENT,  // =
@@ -46,15 +46,12 @@ pub struct Compiler {
     scanner: Scanner,
     current: Token,
     previous: Token,
-}
-
-pub fn error(e: &Error) {
-    println!("{:?}", e);
+    pub chunk: Chunk,
 }
 
 impl Compiler {
     pub fn new(source: String) -> Self {
-        Compiler {scanner: Scanner::new(source), current: Token::default(), previous: Token::default()}
+        Compiler {scanner: Scanner::new(source), current: Token::default(), previous: Token::default(), chunk: Chunk::new()}
     }
 
     // helper functions
@@ -74,7 +71,7 @@ impl Compiler {
                 },
                 Err(e) => {
                     err = true;
-                    error(&e);
+                    println!("{:?}", e);
                 }
             }
         }
@@ -93,25 +90,26 @@ impl Compiler {
         }
     }
 
-    fn write_byte(&self, chunk: &mut Chunk, byte: OpCode) {
-        chunk.write_chunk(byte, self.previous.line);
+    fn write_byte(&mut self, byte: OpCode) {
+        self.chunk.write_chunk(byte, self.previous.line);
     }
 
-    fn write_constant(&self, chunk: &mut Chunk, constant: Value) {
-        let address = chunk.write_value(constant);
-        self.write_byte(chunk, OpCode::CONSTANT(address));
+    fn write_constant(&mut self, constant: Value) {
+        let address = self.chunk.write_value(constant);
+        self.write_byte(OpCode::CONSTANT(address));
     }
 
-    pub fn compile(&mut self, chunk: &mut Chunk) -> Result<(), Error> {
+    pub fn compile(&mut self) -> Result<(), Error> {
         self.advance()?; // consume default
-        self.expression(chunk)?;
-        self.consume(TokenType::EOF, "Expect end of expression")?;
-        self.write_byte(chunk, OpCode::RETURN);
+        while !self.check_type(&TokenType::EOF) {
+            self.declaration()?;
+        }
+        self.write_byte(OpCode::RETURN);
         Ok(())
     }
 
-    fn get_precendence(&mut self) -> Precendence {
-        match self.current.t {
+    fn get_precendence(&mut self, token: Token) -> Precendence {
+        match token.t {
             TokenType::LEFT_PAREN => Precendence::NONE,
             TokenType::AND => Precendence::AND,
             TokenType::OR => Precendence::OR,
@@ -131,24 +129,83 @@ impl Compiler {
         }
     }
 
-    fn parse_precendence(&mut self, chunk: &mut Chunk, prec: Precendence) -> Result<(), Error> {
+    // Statements
+    fn declaration(&mut self) -> Result<(), Error> {
+        match self.current.t {
+            TokenType::VAR => self.variable_declr(),
+            _ => self.statement(),
+        }
+    }
+
+    fn variable_declr(&mut self) -> Result<(), Error> {
+        self.advance()?; // consume `var`
+        self.consume(TokenType::IDENTIFIER, "Expect identifier after `var`")?;
+        let identifier = self.previous.lexeme.clone();
+        let address = self.chunk.write_value(Value::STRING(identifier));
+
+        match self.current.t {
+            TokenType::EQUAL => {
+                self.advance()?;
+                self.expression()?;
+            },
+            _ => self.write_constant(Value::NIL)
+        }
+        self.consume(TokenType::SEMICOLON, "Expect `;` after statement")?;
+
+        self.write_byte(OpCode::DEFINE_GLOBAL(address));
+        Ok(())
+    }
+
+    fn statement(&mut self) -> Result<(), Error> {
+        match self.current.t {
+            TokenType::PRINT => self.print_stmt(),
+            // expression statements
+            _ => self.expression_stmt(),
+        }
+    }
+
+    fn print_stmt(&mut self) -> Result<(), Error> {
+        self.advance()?; // consume `print` token
+        self.expression()?; // expression to be printed
+        self.write_byte(OpCode::PRINT);
+        self.consume(TokenType::SEMICOLON, "Expect `;` after statement")?;
+        Ok(())
+    }
+    
+    fn expression_stmt(&mut self) -> Result<(), Error> {
+        self.expression()?;
+        self.consume(TokenType::SEMICOLON, "Expect `;` after statement")?;
+        self.write_byte(OpCode::POP);
+        Ok(())
+    }
+
+    // Expressions
+    fn expression(&mut self) -> Result<(), Error> {
+        self.parse_precendence(Precendence::ASSIGNMENT)
+    }
+
+    fn parse_precendence(&mut self, prec: Precendence) -> Result<(), Error> {
         self.advance()?;
         // prefix
         match self.previous.t {
-            TokenType::LEFT_PAREN => self.grouping(chunk)?,
-            TokenType::MINUS | TokenType::BANG => self.unary(chunk)?,
-            TokenType::NUMBER => self.number(chunk)?,
-            TokenType::STRING => self.string(chunk)?,
-            TokenType::TRUE | TokenType::FALSE | TokenType::NIL => self.literal(chunk)?,
+            TokenType::LEFT_PAREN => self.grouping()?,
+            TokenType::MINUS | TokenType::BANG => self.unary()?,
+            TokenType::NUMBER => self.number()?,
+            TokenType::STRING => self.string()?,
+            TokenType::IDENTIFIER => {
+                //println!("{:?}", prec);
+                self.variable(prec <= Precendence::ASSIGNMENT)?;
+            },
+            TokenType::TRUE | TokenType::FALSE | TokenType::NIL => self.literal()?,
             _ => {
                 return Err(Error::RUNTIME_ERROR(format!("Expected expression got `{}`", self.previous), self.previous.line));
             }
         }
         // infix
-        while prec < self.get_precendence() {
+        while prec < self.get_precendence(self.current.clone()) {
             self.advance()?;
             if BIN.iter().any(|x| *x == self.previous.t) {
-                self.binary(chunk)?;
+                self.binary()?;
             } else {
                 return Err(Error::RUNTIME_ERROR(format!("Invalid infix operator `{}`", self.previous), self.previous.line));
             }
@@ -156,14 +213,27 @@ impl Compiler {
         Ok(())
     }
 
-    fn expression(&mut self, chunk: &mut Chunk) -> Result<(), Error> {
-        self.parse_precendence(chunk, Precendence::ASSIGNMENT)
+    fn variable(&mut self, can_assign: bool) -> Result<(), Error> {
+        let identifier = self.previous.lexeme.clone();
+        let address = self.chunk.write_value(Value::STRING(identifier));
+        match self.current.t {
+            TokenType::EQUAL => {
+                if !can_assign {
+                    return Err(Error::COMPILE_ERROR("TypeError: Invalid target for variable assignment".into(), self.previous.line));
+                }
+                self.advance()?;
+                self.expression()?;
+                self.write_byte(OpCode::SET_GLOBAL(address));
+            },
+            _ => self.write_byte(OpCode::GET_GLOBAL(address))
+        }
+        Ok(())
     }
 
-    fn number(&mut self, chunk: &mut Chunk) -> Result<(), Error> {
+    fn number(&mut self) -> Result<(), Error> {
         match self.previous.lexeme.parse() {
             Ok(x) => {
-                self.write_constant(chunk, Value::FLOAT(x));
+                self.write_constant(Value::FLOAT(x));
                 Ok(())
             },
             Err(_) => {
@@ -172,21 +242,21 @@ impl Compiler {
         }
     }
 
-    fn string(&mut self, chunk: &mut Chunk) -> Result<(), Error> {
-        self.write_constant(chunk, Value::STRING(self.previous.lexeme.clone()));
+    fn string(&mut self) -> Result<(), Error> {
+        self.write_constant(Value::STRING(self.previous.lexeme.clone()));
         Ok(())
     }
 
-    fn literal(&mut self, chunk: &mut Chunk) -> Result<(), Error> {
+    fn literal(&mut self) -> Result<(), Error> {
         match self.previous.t {
             TokenType::TRUE => {
-                self.write_constant(chunk, Value::BOOL(true));
+                self.write_constant(Value::BOOL(true));
             },
             TokenType::FALSE => {
-                self.write_constant(chunk, Value::BOOL(false));
+                self.write_constant(Value::BOOL(false));
             },
             TokenType::NIL => {
-                self.write_constant(chunk, Value::NIL);
+                self.write_constant(Value::NIL);
             },
             _ => {
                 return Err(Error::COMPILE_ERROR(format!("Invalid literal of type `{}`", self.previous), self.previous.line));
@@ -195,57 +265,57 @@ impl Compiler {
         Ok(())
     }
 
-    fn grouping(&mut self, chunk: &mut Chunk) -> Result<(), Error> {
-        self.expression(chunk)?;
+    fn grouping(&mut self) -> Result<(), Error> {
+        self.expression()?;
         self.consume(TokenType::RIGHT_PAREN, "Expect `)` after expression")
     }
 
-    fn unary(&mut self, chunk: &mut Chunk) -> Result<(), Error> {
+    fn unary(&mut self) -> Result<(), Error> {
         let token_type = self.previous.t.clone();
 
         // compile operand
-        self.parse_precendence(chunk, Precendence::UNARY)?;
+        self.parse_precendence(Precendence::UNARY)?;
 
         match token_type {
-            TokenType::MINUS => self.write_byte(chunk, OpCode::NEGATE),
-            TokenType::BANG => self.write_byte(chunk, OpCode::BANG),
+            TokenType::MINUS => self.write_byte(OpCode::NEGATE),
+            TokenType::BANG => self.write_byte(OpCode::BANG),
             _ => {}
         }
         Ok(())
     }
 
-    fn binary(&mut self, chunk: &mut Chunk) -> Result<(), Error> {
+    fn binary(&mut self) -> Result<(), Error> {
         let token_type = self.previous.t.clone();
 
         // compile rhs operand
-        let prec = self.get_precendence();
-        self.parse_precendence(chunk, prec.next())?;
+        let prec = self.get_precendence(self.previous.clone());
+        self.parse_precendence(prec.next())?;
 
         match token_type {
-            TokenType::PLUS => self.write_byte(chunk, OpCode::ADD),
-            TokenType::MINUS => self.write_byte(chunk, OpCode::SUB),
-            TokenType::STAR => self.write_byte(chunk, OpCode::MUL),
-            TokenType::SLASH => self.write_byte(chunk, OpCode::DIV),
-            TokenType::PERCENT => self.write_byte(chunk, OpCode::REM),
-            TokenType::OR => self.write_byte(chunk, OpCode::OR),
-            TokenType::AND => self.write_byte(chunk, OpCode::AND),
-            TokenType::EQUAL_EQUAL => self.write_byte(chunk, OpCode::EQUAL),
-            TokenType::LESS => self.write_byte(chunk, OpCode::LESS),
-            TokenType::GREATER => self.write_byte(chunk, OpCode::GREATER),
+            TokenType::PLUS => self.write_byte(OpCode::ADD),
+            TokenType::MINUS => self.write_byte(OpCode::SUB),
+            TokenType::STAR => self.write_byte(OpCode::MUL),
+            TokenType::SLASH => self.write_byte(OpCode::DIV),
+            TokenType::PERCENT => self.write_byte(OpCode::REM),
+            TokenType::OR => self.write_byte(OpCode::OR),
+            TokenType::AND => self.write_byte(OpCode::AND),
+            TokenType::EQUAL_EQUAL => self.write_byte(OpCode::EQUAL),
+            TokenType::LESS => self.write_byte(OpCode::LESS),
+            TokenType::GREATER => self.write_byte(OpCode::GREATER),
             TokenType::BANG_EQUAL => {
-                self.write_byte(chunk, OpCode::EQUAL);
-                self.write_byte(chunk, OpCode::BANG);
+                self.write_byte(OpCode::EQUAL);
+                self.write_byte(OpCode::BANG);
             },
             TokenType::LESS_EQUAL => {
-                self.write_byte(chunk, OpCode::LESS);
-                self.write_byte(chunk, OpCode::BANG);
+                self.write_byte(OpCode::LESS);
+                self.write_byte(OpCode::BANG);
             },
             TokenType::GREATER_EQUAL => {
-                self.write_byte(chunk, OpCode::GREATER);
-                self.write_byte(chunk, OpCode::BANG);
+                self.write_byte(OpCode::GREATER);
+                self.write_byte(OpCode::BANG);
             },
             _ => {
-                // unreachable
+                panic!("Unreachable code in binary");
             }
         }
         Ok(())

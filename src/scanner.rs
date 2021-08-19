@@ -213,6 +213,7 @@ impl Scanner {
             '\n' => {
                 self.line += 1;
                 self.current += 1;
+                self.start = self.current;
                 return self.scan_token();
             },
             '\r' | ' ' | '\t' => {

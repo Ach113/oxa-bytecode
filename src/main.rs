@@ -8,7 +8,6 @@ mod token;
 mod compiler;
 mod scanner;
 
-use chunk::Chunk;
 use vm::VM;
 use compiler::Compiler;
 
@@ -26,16 +25,14 @@ pub enum Error {
 fn interpret(code: String) -> Result<(), Error> {
     // declare virtual machine which will interpret the bytecode
     let mut vm = VM::default();
-    // instantiate the chunk
-    let mut chunk = Chunk::new();
     // instantiate the compiler
     let mut compiler = Compiler::new(code);
     // compile the source code into bytecode
-    if let Err(e) = compiler.compile(&mut chunk) {
+    if let Err(e) = compiler.compile() {
         return Err(e);
     }
     // set VM with chunk of bytecode
-    vm.set_chunk(chunk);
+    vm.set_chunk(compiler.chunk);
     // run the VM
     vm.execute(true)
 }

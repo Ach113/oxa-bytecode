@@ -2,6 +2,8 @@ use crate::chunk::{Chunk, OpCode};
 use crate::Error;
 use crate::value::Value;
 
+use std::collections::HashMap;
+
 macro_rules! binary_op {
     ($self:ident, $op:tt) => {{ 
         let b = $self.stack.pop().unwrap();
@@ -14,11 +16,12 @@ pub struct VM {
     chunk: Chunk,
     ip: usize, // instruction pointer
     stack: Vec<Value>,
+    symbol_table: HashMap<String, Value>
 }
 
 impl Default for VM {
     fn default() -> Self {
-        VM {chunk: Chunk::default(), ip: 0, stack: vec![]}
+        VM {chunk: Chunk::default(), ip: 0, stack: vec![], symbol_table: HashMap::new()}
     }
 }
 
@@ -31,24 +34,45 @@ impl VM {
     pub fn execute(&mut self, debug: bool) -> Result<(), Error> {
         if debug {
             println!("------------------------------");
+            self.chunk.dissassemble_chunk();
+            println!("------------------------------");
+        }
+        if self.chunk.code.len() == 0 {
+            return Ok(());
         }
         loop {
             let instruction = self.chunk.read_instruction(&mut self.ip);
-            if debug {
-                instruction.dissassemble_instruction(&self.chunk, self.ip - 1);
-            }
             match instruction {
-                OpCode::RETURN => {
-                    if debug {
-                        println!("------------------------------");
-                    }
-                    println!("{}", self.stack.pop().unwrap());
-                    return Ok(());
-                },
+                OpCode::RETURN => return Ok(()),
+                OpCode::POP => { self.stack.pop(); },
+                OpCode::PRINT => println!("{}", self.stack.pop().unwrap()),
                 OpCode::CONSTANT(addr) => {
                     let value = self.chunk.read_value(*addr);
                     self.stack.push(value);
                 },
+                OpCode::DEFINE_GLOBAL(addr) => {
+                    if let Value::STRING(s) = self.chunk.read_value(*addr) {
+                        self.symbol_table.insert(s, self.stack.pop().unwrap());
+                    } else {
+                        return Err(Error::RUNTIME_ERROR("NameError: Invalid identifier".into(), self.chunk.get_line(self.ip)));
+                    }
+                },
+                OpCode::GET_GLOBAL(addr) => {
+                    if let Value::STRING(s) = self.chunk.read_value(*addr) {
+                        if !self.symbol_table.contains_key(&s) {
+                            return Err(Error::RUNTIME_ERROR(format!("NameError: undefined variable `{}`", s), self.chunk.get_line(self.ip)));
+                        }
+                        self.stack.push(self.symbol_table.get(&s).unwrap().clone());
+                    }
+                },
+                OpCode::SET_GLOBAL(addr) => {
+                    if let Value::STRING(s) = self.chunk.read_value(*addr) {
+                        if !self.symbol_table.contains_key(&s) {
+                            return Err(Error::RUNTIME_ERROR(format!("NameError: undefined variable `{}`", s), self.chunk.get_line(self.ip)));
+                        }
+                        self.symbol_table.insert(s, self.stack.pop().unwrap());
+                    }
+                }
                 OpCode::NEGATE => {
                     let n = self.stack.len();
                     if n < 1 {
@@ -58,7 +82,7 @@ impl VM {
                     if let Ok(x) = value {
                         self.stack[n - 1] = x.clone();
                     } else {
-                        return Err(Error::RUNTIME_ERROR("TypeError: Unsporrted operand types for `-`".into(), self.chunk.get_line(self.ip)));
+                        return Err(Error::RUNTIME_ERROR("TypeError: Unsupported operand types for `-`".into(), self.chunk.get_line(self.ip)));
                     }   
                 },
                 OpCode::BANG => {
@@ -69,7 +93,7 @@ impl VM {
                     let value = self.stack[n - 1].clone();
                     match value {
                         Value::BOOL(x) => self.stack[n - 1] = Value::BOOL(!x),
-                        _ => return Err(Error::RUNTIME_ERROR("TypeError: Unsporrted operand types for `!`".into(), self.chunk.get_line(self.ip)))
+                        _ => return Err(Error::RUNTIME_ERROR("TypeError: Unsupported operand types for `!`".into(), self.chunk.get_line(self.ip)))
                     }  
                 },
                 OpCode::ADD => {
@@ -80,7 +104,7 @@ impl VM {
                     if let Ok(x) = value {
                         self.stack.push(x.clone());
                     } else {
-                        return Err(Error::RUNTIME_ERROR("TypeError: Unsporrted operand types for `+`".into(), self.chunk.get_line(self.ip)));
+                        return Err(Error::RUNTIME_ERROR("TypeError: Unsupported operand types for `+`".into(), self.chunk.get_line(self.ip)));
                     }
                 },
                 OpCode::OR => {
@@ -91,7 +115,7 @@ impl VM {
                     if let Ok(x) = value {
                         self.stack.push(x.clone());
                     } else {
-                        return Err(Error::RUNTIME_ERROR("TypeError: Unsporrted operand types for `or`".into(), self.chunk.get_line(self.ip)));
+                        return Err(Error::RUNTIME_ERROR("TypeError: Unsupported operand types for `or`".into(), self.chunk.get_line(self.ip)));
                     }
                 },
                 OpCode::AND => {
@@ -102,7 +126,7 @@ impl VM {
                     if let Ok(x) = value {
                         self.stack.push(x.clone());
                     } else {
-                        return Err(Error::RUNTIME_ERROR("TypeError: Unsporrted operand types for `and`".into(), self.chunk.get_line(self.ip)));
+                        return Err(Error::RUNTIME_ERROR("TypeError: Unsupported operand types for `and`".into(), self.chunk.get_line(self.ip)));
                     }
                 },
                 OpCode::SUB => {
@@ -113,7 +137,7 @@ impl VM {
                     if let Ok(x) = value {
                         self.stack.push(x.clone());
                     } else {
-                        return Err(Error::RUNTIME_ERROR("TypeError: Unsporrted operand types for `-`".into(), self.chunk.get_line(self.ip)));
+                        return Err(Error::RUNTIME_ERROR("TypeError: Unsupported operand types for `-`".into(), self.chunk.get_line(self.ip)));
                     }
                 },
                 OpCode::MUL => {
@@ -124,7 +148,7 @@ impl VM {
                     if let Ok(x) = value {
                         self.stack.push(x.clone());
                     } else {
-                        return Err(Error::RUNTIME_ERROR("TypeError: Unsporrted operand types for `*`".into(), self.chunk.get_line(self.ip)));
+                        return Err(Error::RUNTIME_ERROR("TypeError: Unsupported operand types for `*`".into(), self.chunk.get_line(self.ip)));
                     }
                 },
                 OpCode::DIV => {
@@ -137,7 +161,7 @@ impl VM {
                         Err(e) => {
                             match e {
                                 Error::DIVIDE_BY_ZERO => return Err(Error::RUNTIME_ERROR("DivideByZero Error".into(), self.chunk.get_line(self.ip))),
-                                _ => return Err(Error::RUNTIME_ERROR("TypeError: Unsporrted operand types for `*`".into(), self.chunk.get_line(self.ip)))
+                                _ => return Err(Error::RUNTIME_ERROR("TypeError: Unsupported operand types for `*`".into(), self.chunk.get_line(self.ip)))
                             }
                         }
                     }
