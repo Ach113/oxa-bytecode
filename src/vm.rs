@@ -72,7 +72,15 @@ impl VM {
                         }
                         self.symbol_table.insert(s, self.stack.pop().unwrap());
                     }
-                }
+                },
+                OpCode::GET_LOCAL(addr) => {
+                    let val = self.stack[*addr].clone();
+                    self.stack.push(val);
+                },
+                OpCode::SET_LOCAL(addr) => {
+                    let val = self.stack.last().unwrap().clone();
+                    self.stack[*addr] = val;
+                },
                 OpCode::NEGATE => {
                     let n = self.stack.len();
                     if n < 1 {

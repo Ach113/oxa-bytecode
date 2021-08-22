@@ -9,6 +9,8 @@ pub enum OpCode {
     DEFINE_GLOBAL(usize),
     GET_GLOBAL(usize),
     SET_GLOBAL(usize),
+    GET_LOCAL(usize),
+    SET_LOCAL(usize),
     // unary ops
     NEGATE,
     BANG,

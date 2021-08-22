@@ -4,6 +4,8 @@ use crate::chunk::{Chunk, OpCode};
 use crate::token::{Token, TokenType};
 use crate::value::Value;
 
+use std::collections::HashMap;
+
 #[allow(non_camel_case_types)]
 #[derive(PartialEq, PartialOrd, Debug)]
 enum Precendence {
@@ -42,8 +44,21 @@ const BIN: [TokenType; 14] = [TokenType::PLUS, TokenType::MINUS, TokenType::SLAS
                               TokenType::OR, TokenType::AND, TokenType::EQUAL_EQUAL, TokenType::BANG_EQUAL, TokenType::LESS, TokenType::GREATER,
                               TokenType::GREATER_EQUAL, TokenType::LESS_EQUAL];
 
+#[derive(Default)]
+pub struct LocalEnv {
+    locals: HashMap<Local, usize>,
+    scope_depth: u32 // depth 0 => global scope
+}
+
+#[derive(Hash, PartialEq, Eq, Debug)]
+pub struct Local {
+    name: Token,
+    depth: u32
+}
+
 pub struct Compiler {
     scanner: Scanner,
+    env: LocalEnv,
     current: Token,
     previous: Token,
     pub chunk: Chunk,
@@ -51,7 +66,7 @@ pub struct Compiler {
 
 impl Compiler {
     pub fn new(source: String) -> Self {
-        Compiler {scanner: Scanner::new(source), current: Token::default(), previous: Token::default(), chunk: Chunk::new()}
+        Compiler {scanner: Scanner::new(source), env: LocalEnv::default(), current: Token::default(), previous: Token::default(), chunk: Chunk::new()}
     }
 
     // helper functions
@@ -140,8 +155,7 @@ impl Compiler {
     fn variable_declr(&mut self) -> Result<(), Error> {
         self.advance()?; // consume `var`
         self.consume(TokenType::IDENTIFIER, "Expect identifier after `var`")?;
-        let identifier = self.previous.lexeme.clone();
-        let address = self.chunk.write_value(Value::STRING(identifier));
+        let identifier = self.previous.clone();
 
         match self.current.t {
             TokenType::EQUAL => {
@@ -152,13 +166,27 @@ impl Compiler {
         }
         self.consume(TokenType::SEMICOLON, "Expect `;` after statement")?;
 
+        // locals
+        if self.env.scope_depth > 0 {
+            self.add_local(identifier);
+            return Ok(());
+        }
+
+        let address = self.chunk.write_value(Value::STRING(identifier.lexeme.clone()));
         self.write_byte(OpCode::DEFINE_GLOBAL(address));
         Ok(())
+    }
+
+    fn add_local(&mut self, name: Token) {
+        let local = Local {name, depth: self.env.scope_depth};
+        let count = self.env.locals.len();
+        self.env.locals.insert(local, count);
     }
 
     fn statement(&mut self) -> Result<(), Error> {
         match self.current.t {
             TokenType::PRINT => self.print_stmt(),
+            TokenType::LEFT_BRACE => self.block_stmt(),
             // expression statements
             _ => self.expression_stmt(),
         }
@@ -171,11 +199,24 @@ impl Compiler {
         self.consume(TokenType::SEMICOLON, "Expect `;` after statement")?;
         Ok(())
     }
-    
+
+    fn block_stmt(&mut self) -> Result<(), Error> {
+        self.advance()?; // consume `{`
+        self.env.scope_depth += 1;
+
+        while self.current.t != TokenType::RIGHT_BRACE && self.current.t != TokenType::EOF {
+            //self.advance()?;
+            self.declaration()?;
+        }
+
+        self.env.scope_depth -= 1;
+        self.consume(TokenType::RIGHT_BRACE, "Expect `}` after block statement")
+    }   
+
     fn expression_stmt(&mut self) -> Result<(), Error> {
         self.expression()?;
         self.consume(TokenType::SEMICOLON, "Expect `;` after statement")?;
-        self.write_byte(OpCode::POP);
+        //self.write_byte(OpCode::POP);
         Ok(())
     }
 
@@ -193,7 +234,6 @@ impl Compiler {
             TokenType::NUMBER => self.number()?,
             TokenType::STRING => self.string()?,
             TokenType::IDENTIFIER => {
-                //println!("{:?}", prec);
                 self.variable(prec <= Precendence::ASSIGNMENT)?;
             },
             TokenType::TRUE | TokenType::FALSE | TokenType::NIL => self.literal()?,
@@ -215,7 +255,19 @@ impl Compiler {
 
     fn variable(&mut self, can_assign: bool) -> Result<(), Error> {
         let identifier = self.previous.lexeme.clone();
-        let address = self.chunk.write_value(Value::STRING(identifier));
+        let mut is_local = false;
+
+        // resolve local
+        let mut address = self.chunk.write_value(Value::STRING(identifier));;
+        for i in (0..self.env.scope_depth).rev() {
+            let local = Local {name: self.previous.clone(), depth: i};
+            if let Some(index) = self.env.locals.get(&local) {
+                address = *index;
+                is_local = true;
+                break;
+            }
+        }
+        
         match self.current.t {
             TokenType::EQUAL => {
                 if !can_assign {
@@ -223,9 +275,19 @@ impl Compiler {
                 }
                 self.advance()?;
                 self.expression()?;
-                self.write_byte(OpCode::SET_GLOBAL(address));
+                if is_local {
+                    self.write_byte(OpCode::SET_LOCAL(address));
+                } else {
+                    self.write_byte(OpCode::SET_GLOBAL(address));
+                }
             },
-            _ => self.write_byte(OpCode::GET_GLOBAL(address))
+            _ => {
+                if is_local {
+                    self.write_byte(OpCode::GET_LOCAL(address));
+                } else {
+                    self.write_byte(OpCode::GET_GLOBAL(address));
+                }
+            }
         }
         Ok(())
     }
