@@ -188,6 +188,7 @@ impl Compiler {
             TokenType::PRINT => self.print_stmt(),
             TokenType::LEFT_BRACE => self.block_stmt(),
             TokenType::IF => self.if_stmt(),
+            TokenType::WHILE => self.while_loop(),
             // expression statements
             _ => self.expression_stmt(),
         }
@@ -237,6 +238,24 @@ impl Compiler {
         } else {
             self.chunk.code.insert(index, OpCode::IF(jaddr));
         }
+        self.write_byte(OpCode::POP);
+        Ok(())
+    }
+
+    fn while_loop(&mut self) -> Result<(), Error> {
+        self.advance()?; // consume `while`
+        let loop_start = self.chunk.code.len();
+
+        self.expression()?; // conditional statement
+        let index = self.chunk.code.len(); // index of loop condition
+        self.write_byte(OpCode::POP);
+        // loop body
+        self.block_stmt()?;
+        // loop
+        self.write_byte(OpCode::JMP(loop_start));
+
+        let jaddr = self.chunk.code.len() + 1;
+        self.chunk.code.insert(index, OpCode::IF(jaddr));
         self.write_byte(OpCode::POP);
         Ok(())
     }
@@ -392,7 +411,7 @@ impl Compiler {
             TokenType::OR => {
                 let jaddr = self.chunk.code.len() + 2;
                 self.chunk.code.insert(index, OpCode::IFN(jaddr));
-                self.write_byte(OpCode::AND);
+                self.write_byte(OpCode::OR);
             },
             TokenType::AND => {
                 let jaddr = self.chunk.code.len() + 2;
@@ -407,11 +426,11 @@ impl Compiler {
                 self.write_byte(OpCode::BANG);
             },
             TokenType::LESS_EQUAL => {
-                self.write_byte(OpCode::LESS);
+                self.write_byte(OpCode::GREATER);
                 self.write_byte(OpCode::BANG);
             },
             TokenType::GREATER_EQUAL => {
-                self.write_byte(OpCode::GREATER);
+                self.write_byte(OpCode::LESS);
                 self.write_byte(OpCode::BANG);
             },
             _ => {
@@ -419,14 +438,5 @@ impl Compiler {
             }
         }
         Ok(())
-    }
-
-    fn logical_and(&mut self) {
-        
-        
-    }
-
-    fn logical_or(&mut self) {
-        self.write_byte(OpCode::OR);
     }
 }
