@@ -43,7 +43,10 @@ impl VM {
         loop {
             let instruction = self.chunk.read_instruction(&mut self.ip);
             match instruction {
-                OpCode::RETURN => return Ok(()),
+                OpCode::RETURN => {
+                    assert_eq!(0, self.stack.len());
+                    return Ok(());
+                },
                 OpCode::POP => { self.stack.pop(); },
                 OpCode::PRINT => println!("{}", self.stack.pop().unwrap()),
                 OpCode::CONSTANT(addr) => {
@@ -201,6 +204,14 @@ impl VM {
                     }
                     let value = binary_op!(self, <);
                     self.stack.push(Value::BOOL(value));
+                },
+                OpCode::IF(jaddr) => {
+                    if *self.stack.last().unwrap() == Value::BOOL(false) {
+                        self.ip = *jaddr;
+                    }
+                },
+                OpCode::JMP(jaddr) => {
+                    self.ip = *jaddr;
                 },
             };
         }

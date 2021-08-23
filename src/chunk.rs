@@ -27,6 +27,8 @@ pub enum OpCode {
     LESS,
     // keywords
     PRINT,
+    IF(usize),
+    JMP(usize),
 }
 
 impl OpCode {

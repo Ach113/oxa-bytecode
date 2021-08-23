@@ -101,7 +101,7 @@ impl Compiler {
         if self.check_type(&tt) {
             self.advance()
         } else {
-            Err(Error::RUNTIME_ERROR(format!("{} got {}", error_message, self.current), self.current.line))
+            Err(Error::RUNTIME_ERROR(format!("{} got `{}`", error_message, self.current), self.current.line))
         }
     }
 
@@ -187,6 +187,7 @@ impl Compiler {
         match self.current.t {
             TokenType::PRINT => self.print_stmt(),
             TokenType::LEFT_BRACE => self.block_stmt(),
+            TokenType::IF => self.if_stmt(),
             // expression statements
             _ => self.expression_stmt(),
         }
@@ -201,7 +202,7 @@ impl Compiler {
     }
 
     fn block_stmt(&mut self) -> Result<(), Error> {
-        self.advance()?; // consume `{`
+        self.consume(TokenType::LEFT_BRACE, "Expect `{` at the start of block statement")?; // consume `{`
         self.env.scope_depth += 1;
 
         while self.current.t != TokenType::RIGHT_BRACE && self.current.t != TokenType::EOF {
@@ -211,7 +212,34 @@ impl Compiler {
 
         self.env.scope_depth -= 1;
         self.consume(TokenType::RIGHT_BRACE, "Expect `}` after block statement")
-    }   
+    }  
+
+    fn if_stmt(&mut self) -> Result<(), Error> {
+        self.advance()?; // consume `if`
+
+        self.expression()?; // conditional statement
+        let index = self.chunk.code.len(); // stack address of `if` instruction
+        // body of `if` statement
+        self.block_stmt()?;
+        let jaddr = self.chunk.code.len() + 1; // jump address
+
+        // `else` statement
+        if self.current.t == TokenType::ELSE {
+            self.chunk.code.insert(index, OpCode::IF(jaddr + 1));
+            // index for jump instruction after `then` block
+            let index = self.chunk.code.len();
+
+            self.advance()?; // consume `else`
+            self.block_stmt()?;
+
+            let jaddr = self.chunk.code.len() + 1; // jump address
+            self.chunk.code.insert(index, OpCode::JMP(jaddr));
+        } else {
+            self.chunk.code.insert(index, OpCode::IF(jaddr));
+        }
+        self.write_byte(OpCode::POP);
+        Ok(())
+    }
 
     fn expression_stmt(&mut self) -> Result<(), Error> {
         self.expression()?;
@@ -258,7 +286,7 @@ impl Compiler {
         let mut is_local = false;
 
         // resolve local
-        let mut address = self.chunk.write_value(Value::STRING(identifier));;
+        let mut address = self.chunk.write_value(Value::STRING(identifier));
         for i in (0..self.env.scope_depth).rev() {
             let local = Local {name: self.previous.clone(), depth: i};
             if let Some(index) = self.env.locals.get(&local) {
@@ -267,7 +295,7 @@ impl Compiler {
                 break;
             }
         }
-        
+
         match self.current.t {
             TokenType::EQUAL => {
                 if !can_assign {
