@@ -28,6 +28,7 @@ pub enum OpCode {
     // keywords
     PRINT,
     IF(usize),
+    IFN(usize),
     JMP(usize),
 }
 

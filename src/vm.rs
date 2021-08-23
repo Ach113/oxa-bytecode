@@ -210,6 +210,11 @@ impl VM {
                         self.ip = *jaddr;
                     }
                 },
+                OpCode::IFN(jaddr) => {
+                    if *self.stack.last().unwrap() != Value::BOOL(false) {
+                        self.ip = *jaddr;
+                    }
+                },
                 OpCode::JMP(jaddr) => {
                     self.ip = *jaddr;
                 },

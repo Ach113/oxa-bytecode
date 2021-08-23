@@ -377,6 +377,8 @@ impl Compiler {
     fn binary(&mut self) -> Result<(), Error> {
         let token_type = self.previous.t.clone();
 
+        let index = self.chunk.code.len(); // for short-circuiting logical OR and AND
+
         // compile rhs operand
         let prec = self.get_precendence(self.previous.clone());
         self.parse_precendence(prec.next())?;
@@ -387,8 +389,16 @@ impl Compiler {
             TokenType::STAR => self.write_byte(OpCode::MUL),
             TokenType::SLASH => self.write_byte(OpCode::DIV),
             TokenType::PERCENT => self.write_byte(OpCode::REM),
-            TokenType::OR => self.write_byte(OpCode::OR),
-            TokenType::AND => self.write_byte(OpCode::AND),
+            TokenType::OR => {
+                let jaddr = self.chunk.code.len() + 2;
+                self.chunk.code.insert(index, OpCode::IFN(jaddr));
+                self.write_byte(OpCode::AND);
+            },
+            TokenType::AND => {
+                let jaddr = self.chunk.code.len() + 2;
+                self.chunk.code.insert(index, OpCode::IF(jaddr));
+                self.write_byte(OpCode::AND);
+            },
             TokenType::EQUAL_EQUAL => self.write_byte(OpCode::EQUAL),
             TokenType::LESS => self.write_byte(OpCode::LESS),
             TokenType::GREATER => self.write_byte(OpCode::GREATER),
@@ -409,5 +419,14 @@ impl Compiler {
             }
         }
         Ok(())
+    }
+
+    fn logical_and(&mut self) {
+        
+        
+    }
+
+    fn logical_or(&mut self) {
+        self.write_byte(OpCode::OR);
     }
 }
