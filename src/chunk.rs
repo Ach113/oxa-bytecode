@@ -1,12 +1,16 @@
 use crate::value::Value;
 
+#[allow(non_camel_case_types)]
 #[derive(Debug, Clone)]
 pub enum OpCode {
     RETURN,
     CONSTANT(usize),
-    //TRUE,
-    //FALSE,
-    //NIL,
+    POP,
+    DEFINE_GLOBAL(usize),
+    GET_GLOBAL(usize),
+    SET_GLOBAL(usize),
+    GET_LOCAL(usize),
+    SET_LOCAL(usize),
     // unary ops
     NEGATE,
     BANG,
@@ -21,6 +25,11 @@ pub enum OpCode {
     EQUAL,
     GREATER,
     LESS,
+    // keywords
+    PRINT,
+    IF(usize),
+    IFN(usize),
+    JMP(usize),
 }
 
 impl OpCode {
@@ -50,7 +59,7 @@ impl OpCode {
 
 #[derive(Default)]
 pub struct Chunk {
-    code: Vec<OpCode>, // each instruction is byte long
+    pub code: Vec<OpCode>, // each instruction is byte long
     values: Vec<Value>, // immediate types
     lines: Vec<usize>, // index: line no, value: no of instructions on that line
 }
@@ -98,16 +107,22 @@ impl Chunk {
         return 0;
     }
 
+    // pushes value to the value vector, return its index. if value is already in vector, return index
     pub fn write_value(&mut self, value: Value) -> usize {
+        if let Some(x) = self.values.last() {
+            if *x == value {
+                return self.values.len() - 1;
+            }
+        }
         self.values.push(value);
         self.values.len() - 1
     }
 
-    /* displays contents of the chunk
+    // displays contents of the chunk
     pub fn dissassemble_chunk(&self) {
         let mut offset = 0;
         while offset < self.code.len() {
             offset = self.code[offset].dissassemble_instruction(self, offset);
         }
-    } */
+    }
 }

@@ -69,9 +69,7 @@ impl Scanner {
             "import" => Token::new(identifier.to_string(), TokenType::IMPORT, self.line),
             "as" => Token::new(identifier.to_string(), TokenType::AS, self.line),
             "from" => Token::new(identifier.to_string(), TokenType::FROM, self.line),
-            _ => {
-                Token::new(identifier.to_string(), TokenType::IDENTIFIER, self.line)
-            },
+            _ => Token::new(identifier.to_string(), TokenType::IDENTIFIER, self.line)
         }
     }
 
@@ -196,11 +194,11 @@ impl Scanner {
                         self.current += 1;
                     }
                     self.line += 1;
-                    return self.advance();
+                    return self.scan_token();
                 } else if self.next('*') {
                     self.multi_line_comment += 1;
                     self.current += 1;
-                    return self.advance();
+                    return self.scan_token();
                 } else {
                     return Ok(Token::new(c.to_string(), TokenType::SLASH, self.line));
                 }
@@ -215,11 +213,13 @@ impl Scanner {
             '\n' => {
                 self.line += 1;
                 self.current += 1;
-                return self.advance();
+                self.start = self.current;
+                return self.scan_token();
             },
             '\r' | ' ' | '\t' => {
                 self.current += 1;
-                return self.advance();
+                self.start = self.current;
+                return self.scan_token();
             },
             // default 
             _ => {

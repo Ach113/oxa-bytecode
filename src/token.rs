@@ -1,4 +1,5 @@
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
 #[derive(Clone, Debug, Default)]
 pub struct Token {
@@ -13,6 +14,20 @@ impl Token {
     }
 }
 
+impl PartialEq for Token {
+    fn eq(&self, other: &Self) -> bool {
+        self.lexeme == other.lexeme && self.t == other.t
+    }
+}
+
+impl Eq for Token {}
+
+impl Hash for Token {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.lexeme.hash(state);
+    }
+}
+
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.lexeme)
@@ -20,7 +35,7 @@ impl fmt::Display for Token {
 }
 
 #[allow(non_camel_case_types)]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TokenType {
     // single char tokens
     LEFT_PAREN,
