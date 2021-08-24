@@ -44,6 +44,7 @@ impl VM {
             let instruction = self.chunk.read_instruction(&mut self.ip);
             match instruction {
                 OpCode::RETURN => {
+                    //println!("{:?}", self.stack);
                     assert_eq!(0, self.stack.len());
                     return Ok(());
                 },

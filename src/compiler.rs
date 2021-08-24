@@ -47,13 +47,13 @@ const BIN: [TokenType; 14] = [TokenType::PLUS, TokenType::MINUS, TokenType::SLAS
 #[derive(Default)]
 pub struct LocalEnv {
     locals: HashMap<Local, usize>,
-    scope_depth: u32 // depth 0 => global scope
+    scope_depth: usize // depth 0 => global scope
 }
 
-#[derive(Hash, PartialEq, Eq, Debug)]
+#[derive(Hash, PartialEq, Eq, Debug, Clone)]
 pub struct Local {
     name: Token,
-    depth: u32
+    depth: usize
 }
 
 pub struct Compiler {
@@ -61,12 +61,13 @@ pub struct Compiler {
     env: LocalEnv,
     current: Token,
     previous: Token,
+    loop_counter: usize,
     pub chunk: Chunk,
 }
 
 impl Compiler {
     pub fn new(source: String) -> Self {
-        Compiler {scanner: Scanner::new(source), env: LocalEnv::default(), current: Token::default(), previous: Token::default(), chunk: Chunk::new()}
+        Compiler {scanner: Scanner::new(source), env: LocalEnv::default(), current: Token::default(), previous: Token::default(), loop_counter: 0, chunk: Chunk::new()}
     }
 
     // helper functions
@@ -189,6 +190,18 @@ impl Compiler {
             TokenType::LEFT_BRACE => self.block_stmt(),
             TokenType::IF => self.if_stmt(),
             TokenType::WHILE => self.while_loop(),
+            TokenType::BREAK => {
+                self.advance()?;
+                self.consume(TokenType::SEMICOLON, "Expect `;` after statement")?;
+                self.write_byte(OpCode::JMP(0));
+                Err(Error::BREAK(self.chunk.code.len() - 1))
+            },
+            TokenType::CONTINUE => {
+                self.advance()?;
+                self.consume(TokenType::SEMICOLON, "Expect `;` after statement")?;
+                self.write_byte(OpCode::JMP(0));
+                Err(Error::CONTINUE(self.chunk.code.len() - 1))
+            },
             // expression statements
             _ => self.expression_stmt(),
         }
@@ -204,59 +217,109 @@ impl Compiler {
 
     fn block_stmt(&mut self) -> Result<(), Error> {
         self.consume(TokenType::LEFT_BRACE, "Expect `{` at the start of block statement")?; // consume `{`
+        let mut ret: Result<(), Error> = Ok(());
         self.env.scope_depth += 1;
 
+
         while self.current.t != TokenType::RIGHT_BRACE && self.current.t != TokenType::EOF {
-            //self.advance()?;
-            self.declaration()?;
+            if let Err(e) = self.declaration() {
+                match e {
+                    Error::BREAK(_) | Error::CONTINUE(_) => {
+                        ret = Err(e);
+                    },
+                    _ => return Err(e)
+                }
+            }
         }
 
         self.env.scope_depth -= 1;
-        self.consume(TokenType::RIGHT_BRACE, "Expect `}` after block statement")
+        // free stack and local variables
+        let locals: Vec<Local> = self.env.locals.keys().cloned().collect();
+        let scope_depth = self.env.scope_depth + 1;
+        for local in locals.iter().filter(|x| x.depth == scope_depth) {
+            self.write_byte(OpCode::POP);
+            self.env.locals.remove(&local);
+        }
+        
+        self.consume(TokenType::RIGHT_BRACE, "Expect `}` after block statement")?;
+        ret
     }  
 
     fn if_stmt(&mut self) -> Result<(), Error> {
         self.advance()?; // consume `if`
+        let mut ret: Result<(), Error> = Ok(());
 
         self.expression()?; // conditional statement
         let index = self.chunk.code.len(); // stack address of `if` instruction
+        self.write_byte(OpCode::IF(0)); // temp
+        self.write_byte(OpCode::POP);
         // body of `if` statement
-        self.block_stmt()?;
-        let jaddr = self.chunk.code.len() + 1; // jump address
+        if let Err(e) = self.block_stmt() {
+            match e {
+                Error::BREAK(_) | Error::CONTINUE(_) => ret = Err(e),
+                _ => return Err(e)
+            }
+        }
+        let jaddr = self.chunk.code.len(); // jump address
 
         // `else` statement
         if self.current.t == TokenType::ELSE {
-            self.chunk.code.insert(index, OpCode::IF(jaddr + 1));
+            self.chunk.code[index] = OpCode::IF(jaddr + 1);
             // index for jump instruction after `then` block
             let index = self.chunk.code.len();
+            self.write_byte(OpCode::IF(0)); // temp
+            self.write_byte(OpCode::POP);
 
             self.advance()?; // consume `else`
-            self.block_stmt()?;
+            if let Err(e) = self.block_stmt() {
+                match e {
+                    Error::BREAK(_) | Error::CONTINUE(_) => ret = Err(e),
+                    _ => return Err(e)
+                }
+            }
 
-            let jaddr = self.chunk.code.len() + 1; // jump address
-            self.chunk.code.insert(index, OpCode::JMP(jaddr));
+            let jaddr = self.chunk.code.len(); // jump address
+            self.chunk.code[index] = OpCode::JMP(jaddr);
         } else {
-            self.chunk.code.insert(index, OpCode::IF(jaddr));
+            self.chunk.code[index] = OpCode::IF(jaddr);
         }
         self.write_byte(OpCode::POP);
-        Ok(())
+        ret
     }
 
     fn while_loop(&mut self) -> Result<(), Error> {
         self.advance()?; // consume `while`
+        // handlers for `break` and `continue` statements
+        let mut break_: Option<usize> = None;
+        let mut continue_: Option<usize> = None;
+
         let loop_start = self.chunk.code.len();
 
         self.expression()?; // conditional statement
         let index = self.chunk.code.len(); // index of loop condition
+        self.write_byte(OpCode::IF(0)); // temp
         self.write_byte(OpCode::POP);
         // loop body
-        self.block_stmt()?;
+        if let Err(e) = self.block_stmt() {
+            match e {
+                Error::BREAK(i) => break_ = Some(i),
+                Error::CONTINUE(i) => continue_ = Some(i),
+                _ => return Err(e)
+            }
+        }
         // loop
         self.write_byte(OpCode::JMP(loop_start));
 
-        let jaddr = self.chunk.code.len() + 1;
-        self.chunk.code.insert(index, OpCode::IF(jaddr));
+        let jaddr = self.chunk.code.len();
+        self.chunk.code[index] = OpCode::IF(jaddr);
         self.write_byte(OpCode::POP);
+
+        if let Some(i) = break_ {
+            self.chunk.code[i] = OpCode::JMP(jaddr);
+        }
+        if let Some(i) = continue_ {
+            self.chunk.code[i] = OpCode::JMP(loop_start);
+        }
         Ok(())
     }
 
@@ -306,7 +369,7 @@ impl Compiler {
 
         // resolve local
         let mut address = self.chunk.write_value(Value::STRING(identifier));
-        for i in (0..self.env.scope_depth).rev() {
+        for i in (0..self.env.scope_depth + 1).rev() {
             let local = Local {name: self.previous.clone(), depth: i};
             if let Some(index) = self.env.locals.get(&local) {
                 address = *index;
