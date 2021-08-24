@@ -19,6 +19,8 @@ pub enum Error {
     DIVIDE_BY_ZERO,
     FILE_NOT_FOUND,
     IO_ERROR,
+    BREAK(usize),
+    CONTINUE(usize),
     SIGNAL
 }
 
